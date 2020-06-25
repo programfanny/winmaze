@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <memory.h>
-
 typedef struct _step{
 	int x;
 	int y;
@@ -19,6 +18,7 @@ typedef struct _border{
 	BYTE *chain;
 	STEP *path;
 	}BORDER;
+void dispChain(HWND hwnd,BORDER *pBorder, int posx,int posy,int n);
 void dispPath(HWND, int, int, STEP*,BYTE*);
 void dispBorder(HWND, BORDER*);
 void FindBorder(HWND, BITMAP*, BYTE*, BORDER*);
@@ -61,7 +61,8 @@ int WINAPI WinMain (HINSTANCE hInstance, HINSTANCE hPrevInstance,PSTR szCmdLine,
 		hInstance,                    	// program instance handle
 		NULL) ;                       	// creation parameters
 	 
-	ShowWindow (hwnd, iCmdShow) ;
+	//ShowWindow (hwnd, iCmdShow) ;
+	ShowWindow(hwnd, SW_MAXIMIZE);
 	UpdateWindow (hwnd) ;
 	 
 	while (GetMessage (&msg, NULL, 0, 0)) {
@@ -111,15 +112,17 @@ LRESULT CALLBACK WndProc (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 		case WM_PAINT:
 			hdc=BeginPaint(hwnd,&ps);
 			Rectangle(hdc,15,0,bitmap.bmWidth+30,bitmap.bmHeight+10);
-			BitBlt(hdc,20,5,bitmap.bmWidth,bitmap.bmHeight,hdcmem,0,0,SRCCOPY);
+			BitBlt(hdc,20,5,bitmap.bmWidth,bitmap.bmHeight,hdcmem,0,0,SRCCOPY);			
+
 			sprintf(buf,"bmWidth:%5d, bmHeight:%5d",bitmap.bmWidth,bitmap.bmHeight);
 			TextOut(hdc,50,580,buf,strlen(buf));
 			sprintf(buf,"pBits = %p, qBits = %p",pBits,qBits);
 			TextOut(hdc,350,580,buf,strlen(buf));			
 			sprintf(buf,"path_len = %d",border.len);
 			TextOut(hdc,835,0,buf,strlen(buf));		
-			//dispBorder(hwnd,&border);
-			dispPath(hwnd, bitmap.bmWidth, border.len, border.path, pBits);
+			// dispBorder(hwnd,&border);
+			// dispPath(hwnd, bitmap.bmWidth, border.len, border.path, pBits);
+			// dispChain(hwnd, &border, 835, 30, 30);
 			EndPaint(hwnd,&ps);
 			return 0;
 		case WM_KEYDOWN:
@@ -259,8 +262,9 @@ void GetBorder(BITMAP* pbmp, BYTE* pBits, BYTE* qBits, BORDER* pBorder){
 	
 	}
 void FindBorder(HWND hwnd, BITMAP* pbmp, BYTE* pBits, BORDER* pBorder){
-	int s,t,i,j,k,x,y,tmp,len;
+	int s,t,i,j,k,x,y,u,v,tmp,len,time;
 	BYTE *p,*q,*r;
+	BOOL stop;
 	int width, height;
 	STEP round[8];
 	POINT pt;
@@ -268,14 +272,14 @@ void FindBorder(HWND hwnd, BITMAP* pbmp, BYTE* pBits, BORDER* pBorder){
 	BYTE *pA,*pB;
 	width=pbmp->bmWidth;
 	height=pbmp->bmHeight;
-	pA=(BYTE*)malloc(width*height);	
+	pA=(BYTE*)malloc(width*height);
 //	pB=(BYTE*)malloc(width*height);
 
 	ZeroMemory(pA,width*height);
 //	ZeroMemory(pB,width*height);
 
 	STEP shift4[]={{1,0}, {0,1}, {-1,0}, {0,-1}};
-	STEP shift8[]={{1,0},{1,1}, {0,1},{-1,1}, {-1,0},{-1,1}, {0,-1},{1,-1}};
+	STEP shift8[]={{1,0},{1,1}, {0,1},{-1,1}, {-1,0},{-1,-1}, {0,-1},{1,-1}};
 	for(j=1;j<height-1;j++){
 		for(i=1;i<width-1;i++){
 			s=j*width+i;
@@ -287,6 +291,32 @@ void FindBorder(HWND hwnd, BITMAP* pbmp, BYTE* pBits, BORDER* pBorder){
 			}
 		}
 	}
+	len=s=0;
+	while(pA[s]==0){s++;} //find first point of edge
+	i=s%width;j=s/width;
+	pA[s]=100;
+	pBorder->path[len].x=i; pBorder->path[len++].y=j;
+	pBorder->start.x=i; pBorder->start.y=j; pBorder->kindOfShift=8;
+	stop=FALSE;
+	time=0;
+	do{time++;	
+		u=s=0;
+		for(k=0;k<8;k++){
+			x=i+shift8[k].x;
+			y=j+shift8[k].y;
+			t=y*width+x;
+			s+=pA[t];
+			if(pA[t]==1){pBorder->chain[len]=k; break;}
+			if(pA[t]==10){s-=pA[t];}
+		}
+		if( s>0 ){
+			pBorder->path[len].x=x; pBorder->path[len++].y=y;
+			if(pA[j*width+i]!=100)pA[j*width+i]=10;
+			i=x; j=y;
+		}	else { pA[j*width+i]=10; len--;
+			i=pBorder->path[len].x; j=pBorder->path[len].y;}
+	}while(!((pBorder->path[0].x==i) && (pBorder->path[0].y==j)));
+	pBorder->len=len;
 	CopyMemory(pBits,pA,width*height);
 	free(pA);//free(pB);
 	}
@@ -307,7 +337,7 @@ void dispval(HWND hwnd,BITMAP *pbmp,BYTE* pBits,int xPos,int yPos,int n,int posx
 		};
 	width=pbmp->bmWidth;
 	height=pbmp->bmHeight;
-	sprintf(buf,"%8p:(%3d,%3d)",pBits,xPos,yPos);
+	sprintf(buf," %8p  [ %3d , %3d ] ",pBits,xPos,yPos);
 	TextOut(hdc,posx-100,posy-120,buf,strlen(buf));
 	hFont= CreateFont(-8, -4, 0, 0, 400,FALSE, FALSE, FALSE,
 		DEFAULT_CHARSET,OUT_CHARACTER_PRECIS, CLIP_CHARACTER_PRECIS,
@@ -321,8 +351,8 @@ void dispval(HWND hwnd,BITMAP *pbmp,BYTE* pBits,int xPos,int yPos,int n,int posx
 			if((x>=0) && (x<width) && (y>=0) && (y<height)){
 				val=pBits[y*width+x];
 				sprintf(buf,"%02x",val);
-				SetBkColor(hdc,RGB(208-val*80,225,198));
-				SetTextColor(hdc,RGB(208-val*80,val*80+128,0));
+				SetBkColor(hdc,RGB(128+val%7*31,128,128));
+				SetTextColor(hdc,RGB(255-val*80,val*80+128,255));
 			}else{sprintf(buf,"  "); SetBkColor(hdc,RGB(192,192,192));}
 				TextOut(hdc,posx+1+i*10,posy+1+j*10,buf,strlen(buf));
 		}
@@ -332,8 +362,7 @@ void dispval(HWND hwnd,BITMAP *pbmp,BYTE* pBits,int xPos,int yPos,int n,int posx
 	LineTo(hdc,posx,posy);
 	LineTo(hdc,posx+10,posy);
 	LineTo(hdc,posx+10,posy+10);
-	LineTo(hdc,posx,posy+10);
-	
+	LineTo(hdc,posx,posy+10);	
 	SelectObject(hdc,hOldFont);
 	DeleteObject(hFont);
 	ReleaseDC(hwnd,hdc);
@@ -354,9 +383,22 @@ void dispPath(HWND hwnd, int width,int len, STEP *path,BYTE* pBits){
 	int i;
 	char buf[80];
 	HDC hdc=GetDC(hwnd);
-	for(i=0;i<len;i++){
-		sprintf(buf,"[%d,%d]=%d",path[i].x,path[i].y,pBits[path[i].y*width+path[i].x]);
-		TextOut(hdc,835,30+i*20,buf,strlen(buf));
+	for(i=0;i<len-550;i++){
+		sprintf(buf,"[%d,%d]=%d",path[i+550].x,path[i+550].y,pBits[path[i+550].y*width+path[i+550].x]);
+		TextOut(hdc,835+i/30*100,30+i%30*20,buf,strlen(buf));
+		SetPixel(hdc,path[i+550].x+20,path[i+550].y+5,RGB(0,0,255));
 	}
 	ReleaseDC(hwnd,hdc);
 	}	
+void dispChain(HWND hwnd,BORDER *pBorder, int posx,int posy,int n){
+	int i;
+	char buf[80];
+	HDC hdc=GetDC(hwnd);
+	sprintf(buf,"[%d,%d] len= %d",pBorder->start.x,pBorder->start.y,pBorder->len);
+	TextOut(hdc,635,30,buf,strlen(buf));	
+	for(i=1;i<pBorder->len;i++){
+		sprintf(buf,"%d",pBorder->chain[i]);
+		TextOut(hdc,835+i/30*10,30+i%30*16,buf,strlen(buf));
+	}
+	ReleaseDC(hwnd,hdc);
+	}
